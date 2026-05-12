@@ -1,33 +1,49 @@
-# ── Frontend Dockerfile ─────────────────────────────────────────
-FROM node:18-alpine AS build
+# Build stage
+FROM node:20-alpine AS build
 
-WORKDIR /usr/src/app
+WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci && npm cache clean --force
+
+# Install dependencies with retry fallback
+RUN npm ci --prefer-offline --no-audit --legacy-peer-deps || npm install --prefer-offline --no-audit --legacy-peer-deps
 
 COPY . .
 
 ARG VITE_API_URL=http://backend:5000
 ARG VITE_API_WS_URL=http://backend:5000
+ARG NODE_ENV=production
 
-RUN NODE_OPTIONS="--max-old-space-size=1536" npm run build
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_API_WS_URL=${VITE_API_WS_URL}
+ENV NODE_ENV=${NODE_ENV}
+ENV NODE_OPTIONS=--max-old-space-size=4096
 
-# ── Stage 2: Serve with Nginx ──────────────────────────────────
+RUN npm run build
+
+# Prune dev dependencies in separate layer
+RUN npm prune --omit=dev && npm cache clean --force
+
+# Runtime stage
 FROM nginx:alpine
 
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-RUN rm /etc/nginx/conf.d/default.conf
+WORKDIR /usr/share/nginx/html
+
+RUN apk add --no-cache curl && \
+    addgroup -S appgroup && adduser -S appuser -G appgroup && \
+    rm -f /etc/nginx/conf.d/default.conf && \
+    mkdir -p /var/cache/nginx /var/run/nginx && \
+    chown -R appuser:appgroup /var/cache/nginx /var/run /var/log/nginx && \
+    touch /var/run/nginx.pid && \
+    chown appuser:appgroup /var/run/nginx.pid
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Local dist directly copy karo (already built)
-COPY dist/ /usr/share/nginx/html
-
-RUN chown -R appuser:appgroup /var/cache/nginx /var/run /var/log/nginx /usr/share/nginx/html \
-  && touch /var/run/nginx.pid \
-  && chown -R appuser:appgroup /var/run/nginx.pid
+COPY --from=build --chown=appuser:appgroup /app/dist .
 
 USER appuser
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:8080/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
