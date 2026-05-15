@@ -10,16 +10,17 @@ RUN npm ci --prefer-offline --no-audit --legacy-peer-deps || npm install --prefe
 
 COPY . .
 
-ARG VITE_API_URL=http://backend:5000
-ARG VITE_API_WS_URL=http://backend:5000
+ARG VITE_API_URL=/
+ARG VITE_API_WS_URL=/
 ARG NODE_ENV=production
 
 ENV VITE_API_URL=${VITE_API_URL}
 ENV VITE_API_WS_URL=${VITE_API_WS_URL}
 ENV NODE_ENV=${NODE_ENV}
-ENV NODE_OPTIONS=--max-old-space-size=4096
+ENV NODE_OPTIONS=--max-old-space-size=2048
 
-RUN npm run build
+# Run build with explicit timeout and verbose output
+RUN npm run build -- --logLevel=info
 
 # Prune dev dependencies in separate layer
 RUN npm prune --omit=dev && npm cache clean --force
