@@ -1,0 +1,113 @@
+---
+# ══════════════════════════════════════════════════════════════════
+# Backend — Kubernetes Secret (base64-encoded values)
+# ══════════════════════════════════════════════════════════════════
+# IMPORTANT: Replace the base64 values below with your actual secrets.
+# To encode: echo -n "your_value" | base64
+# ══════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tuitiondekho-secrets
+  namespace: tuitiondekho
+type: Opaque
+data:
+  # echo -n "admin" | base64 → YWRtaW4=
+  MONGO_ROOT_USER: YWRtaW4=
+  # echo -n "changeme" | base64 → Y2hhbmdlbWU=
+  MONGO_ROOT_PASSWORD: Y2hhbmdlbWU=
+  # echo -n "your_super_secret_jwt_key_here" | base64
+  JWT_SECRET: eW91cl9zdXBlcl9zZWNyZXRfand0X2tleV9oZXJl
+
+---
+# ══════════════════════════════════════════════════════════════════
+# Backend — Deployment (2 replicas)
+# ══════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: tuitiondekho
+  labels:
+    app: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: him1029g/tuitiondekho-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          env:
+            - name: PORT
+              value: "5000"
+            - name: NODE_ENV
+              value: "production"
+            - name: MONGO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: tuitiondekho-secrets
+                  key: MONGO_ROOT_USER
+            - name: MONGO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tuitiondekho-secrets
+                  key: MONGO_ROOT_PASSWORD
+            - name: MONGODB_URI
+              value: "mongodb://$(MONGO_ROOT_USER):$(MONGO_ROOT_PASSWORD)@mongodb:27017/tuitionDekho?authSource=admin"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tuitiondekho-secrets
+                  key: JWT_SECRET
+            - name: MEETING_BASE_URL
+              value: "https://meet.jit.si"
+            - name: FRONTEND_URL
+              value: "http://tuitiondekho.com"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+
+---
+# ══════════════════════════════════════════════════════════════════
+# Backend — ClusterIP Service
+# ══════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: tuitiondekho
+  labels:
+    app: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
