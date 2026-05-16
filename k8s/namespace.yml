@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tuitiondekho
+  labels:
+    app: tuitiondekho
+    istio-injection: enabled
