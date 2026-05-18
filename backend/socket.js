@@ -13,25 +13,28 @@ const emitToUser = (userId, event, payload) => {
     if (socketId) {
       io.to(socketId).emit(event, payload);
     }
-  } catch (e) { console.error('emitToUser error', e); }
+  } catch (e) { /* silently fail for non-critical socket emit */ }
 };
 
 const initSocket = (server) => {
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    process.env.FRONTEND_URL
+  ].filter(Boolean);
+
   io = new Server(server, {
     cors: {
-      origin: "http://localhost:5173",
+      origin: allowedOrigins,
       credentials: true,
     },
   });
 
   io.on("connection", (socket) => {
-    console.log("🔥 Socket connected:", socket.id);
-
     // ---------------- REGISTER USER ----------------
     socket.on("register", (userId) => {
       socket.userId = userId;
       userSockets.set(userId, socket.id);
-      console.log(`✅ User registered ${userId}`);
     });
 
     // ---------------- CHAT ----------------
@@ -51,61 +54,64 @@ const initSocket = (server) => {
         // persist notification so recipients see it even if offline
         try {
           await Notification.create({ userId: payload.recipientId, type: 'message', message: payload.text });
-        } catch (e) { console.error('Notification create error:', e); }
+        } catch (_) { /* non-critical */ }
 
         // notify recipient directly (in case they're not currently in the room)
         const recipientSocketId = userSockets.get(payload.recipientId);
         if (recipientSocketId) {
           io.to(recipientSocketId).emit("new-message", msg);
-        } else {
-          // recipient offline — (no socket) they will see persisted notifications when they open header
         }
       } catch (err) {
-        console.error("Socket message error:", err.message);
+        socket.emit("error", { message: "Failed to send message" });
       }
     });
 
     // ---------------- VIDEO CALL ----------------
     socket.on("start-call", async ({ toUserId, fromUser, roomId }) => {
-      const targetSocketId = userSockets.get(toUserId);
-      if (!targetSocketId) return;
-
-      const log = await CallLog.create({
-        fromUser,
-        toUserId,
-        roomId,
-        status: "ringing",
-      });
-
-      io.to(targetSocketId).emit("incoming-call", {
-        fromUser,
-        roomId,
-        callLogId: log._id,
-      });
-
-      // persist incoming-call notification
       try {
-        await Notification.create({ userId: toUserId, type: 'incoming_call', message: `${fromUser?.name} is calling you` });
-      } catch (e) { console.error('Notification create error:', e); }
+        const targetSocketId = userSockets.get(toUserId);
+        if (!targetSocketId) return;
 
-      // Missed call after 30s if not answered
-      setTimeout(async () => {
-        const updated = await CallLog.findById(log._id);
-        if (updated && updated.status === "ringing") {
-          updated.status = "missed";
-          await updated.save();
+        const log = await CallLog.create({
+          fromUser,
+          toUserId,
+          roomId,
+          status: "ringing",
+        });
 
-          // notify the caller that the call was missed
-          const callerSocketId = userSockets.get(fromUser.id);
-          if (callerSocketId) {
-            io.to(callerSocketId).emit("missed-call", {
-              fromUser,
-              roomId,
-              time: Date.now(),
-            });
-          }
-        }
-      }, 30000);
+        io.to(targetSocketId).emit("incoming-call", {
+          fromUser,
+          roomId,
+          callLogId: log._id,
+        });
+
+        // persist incoming-call notification
+        try {
+          await Notification.create({ userId: toUserId, type: 'incoming_call', message: `${fromUser?.name} is calling you` });
+        } catch (_) { /* non-critical */ }
+
+        // Missed call after 30s if not answered
+        setTimeout(async () => {
+          try {
+            const updated = await CallLog.findById(log._id);
+            if (updated && updated.status === "ringing") {
+              updated.status = "missed";
+              await updated.save();
+
+              const callerSocketId = userSockets.get(fromUser.id);
+              if (callerSocketId) {
+                io.to(callerSocketId).emit("missed-call", {
+                  fromUser,
+                  roomId,
+                  time: Date.now(),
+                });
+              }
+            }
+          } catch (_) { /* non-critical timeout handler */ }
+        }, 30000);
+      } catch (err) {
+        socket.emit("error", { message: "Failed to start call" });
+      }
     });
 
     // Callee accepted the call
@@ -120,9 +126,7 @@ const initSocket = (server) => {
         if (callerSocketId) {
           io.to(callerSocketId).emit("call-accepted", { roomId });
         }
-      } catch (err) {
-        console.error("call-accepted error:", err);
-      }
+      } catch (_) { /* non-critical */ }
     });
 
     // Callee rejected the call
@@ -137,9 +141,7 @@ const initSocket = (server) => {
         if (callerSocketId) {
           io.to(callerSocketId).emit("call-rejected", { roomId });
         }
-      } catch (err) {
-        console.error("call-rejected error:", err);
-      }
+      } catch (_) { /* non-critical */ }
     });
 
     // Caller cancels the call
@@ -154,16 +156,13 @@ const initSocket = (server) => {
         if (targetSocketId) {
           io.to(targetSocketId).emit("call-cancelled", { roomId, fromUser });
         }
-      } catch (err) {
-        console.error("cancel-call error:", err);
-      }
+      } catch (_) { /* non-critical */ }
     });
 
     socket.on("disconnect", () => {
       if (socket.userId) {
         userSockets.delete(socket.userId);
       }
-      console.log("❌ Socket disconnected:", socket.id);
     });
   });
 };
