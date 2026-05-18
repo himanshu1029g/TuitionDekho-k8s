@@ -398,6 +398,56 @@ kubectl describe hpa backend-hpa -n tuitiondekho
 
 ---
 
+## 🖥️ k9s — Kubernetes Terminal UI
+
+**k9s** is a terminal-based Kubernetes dashboard that lets you visualize and interact with your cluster in real-time — no browser, no Grafana needed.
+
+### Install k9s
+
+```bash
+winget install -e --id derailed.k9s
+```
+
+### Run k9s
+
+```bash
+k9s --namespace tuitiondekho
+```
+
+### k9s Screenshots
+
+#### All Resources Overview
+![k9s All Resources](./screenshots/k9s_all.png)
+
+#### Deployments View
+![k9s Deployments](./screenshots/k9s_deployement.png)
+
+#### Pods View
+![k9s Pods](./screenshots/k9s_pods.png)
+
+#### Pod Logs (Live)
+![k9s Logs](./screenshots/k9s_logs.png)
+
+#### Namespace View
+![k9s Namespace](./screenshots/k9s_namespace.png)
+
+#### Pod Description
+![k9s Describe](./screenshots/k9s_des.png)
+
+### k9s Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `:pod` | View all pods |
+| `:deploy` | View deployments |
+| `:svc` | View services |
+| `:hpa` | View HPA |
+| `l` | View logs |
+| `d` | Describe resource |
+| `ctrl+c` | Exit |
+
+---
+
 ## 🖼️ Application Screenshots
 
 ### Home Page
